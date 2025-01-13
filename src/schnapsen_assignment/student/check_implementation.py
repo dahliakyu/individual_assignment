@@ -1,5 +1,6 @@
 import itertools
 from random import Random
+import traceback
 from typing import Callable, Iterable, Iterator, Optional, Generic, TypeVar, cast
 import click
 
@@ -20,7 +21,7 @@ def main() -> None:
     """The main entry point."""
 
 
-@main.command(name="check", help="Check from schnapsen_assignment.student.bot.AssignmentBot for compliance with the assignment")
+@main.command(name="check", help="Check the schnapsen_assignment.student.bot.AssignmentBot for compliance with the assignment")
 @click.option('--id', type=int, required=True, help="Your student ID")
 def test_bot(id: int) -> None:
     student_bot = AssignmentBot()
@@ -67,7 +68,7 @@ Action 4
 --------
     {no_errors if not action_errors[3] else action_errors[3][0]}
 
-Intergation test
+Integration test
 ----------------
     {no_errors if not integration_errors[0] else integration_errors[0][0]}
 """)
@@ -98,12 +99,12 @@ T = TypeVar('T', bound=bool | Move)
 def simple_perspective_string(perspective: PlayerPerspective, leader_move: Optional[Move]) -> str:
     valid_moves: list[Move] = perspective.valid_moves()
     trump_suit = perspective.get_trump_suit()
-    hand = perspective.get_hand()
-    won_cards = perspective.get_won_cards()
-    opponent_won_cards = perspective.get_opponent_won_cards()
-    known_cards_of_opponent_hand = perspective.get_known_cards_of_opponent_hand()
+    hand = perspective.get_hand().get_cards()
+    won_cards = perspective.get_won_cards().get_cards()
+    opponent_won_cards = perspective.get_opponent_won_cards().get_cards()
+    known_cards_of_opponent_hand = perspective.get_known_cards_of_opponent_hand().get_cards()
 
-    return f"Perspective[hand={[card for card in hand]}, phase={perspective.get_phase()}, leader_move={leader_move}, trump_suit={trump_suit}, valid_moves = {valid_moves}, won_cards={won_cards}, won_cards_opponent={opponent_won_cards}, known_opponent_cards={known_cards_of_opponent_hand}]"
+    return f"Perspective[\nhand={hand}, \nphase={perspective.get_phase()}, leader_move={leader_move}, trump_suit={trump_suit}, \nvalid_moves = {valid_moves}, \nwon_cards={won_cards}, \nwon_cards_opponent={opponent_won_cards}, \nknown_opponent_cards={known_cards_of_opponent_hand}]"
 
 
 class CheckingGamePlayEngine(Generic[T], GamePlayEngine):
@@ -125,9 +126,13 @@ class CheckingGamePlayEngine(Generic[T], GamePlayEngine):
                     outcome = self.implementation(perspective, leader_move)
                     expected_outcome = next(self.expected_outcomes_iterator)
                     if outcome != expected_outcome:
-                        self.errors.append(f"Something seems wrong in your code. Expected {expected_outcome} , but got {outcome} for the condition {self.implementation.__name__}. --- For input {simple_perspective_string(perspective, leader_move)}.")
+                        self.errors.append(f"Something seems wrong in your code. Expected {expected_outcome} , but got {outcome} for {self.implementation.__name__}. \n--- For input {simple_perspective_string(perspective, leader_move)}.")
                 except Exception as e:
-                    self.errors.append(f"An exception was raised from your bot's method {self.implementation.__name__} with message: {e}")
+                    if isinstance(e, NotImplementedError):
+                        msg = str(e)
+                    else:
+                        msg = traceback.format_exc(limit=-1)
+                    self.errors.append(f"An exception was raised from your bot's method {self.implementation.__name__} with message: {msg}")
 
             bot_move = super().get_move(bot, perspective, leader_move)
             return bot_move
@@ -200,10 +205,14 @@ class IntegrationCheckingGamePlayEngine(GamePlayEngine):
                 try:
                     bot_move = super().get_move(bot, perspective, leader_move)
                 except Exception as e:
-                    self.errors.append(f"An exception was raised by your bot with message: {e}")
+                    if isinstance(e, NotImplementedError):
+                        msg = str(e)
+                    else:
+                        msg = traceback.format_exc(limit=-1)
+                    self.errors.append(f"An exception was raised by your bot with message: {msg}")
                     bot_move = expected_move
                 if bot_move != expected_move:
-                    self.errors.append(f"Bot played a wrong move. For input {perspective}, {expected_move} was expected, but got {bot_move}.")
+                    self.errors.append(f"Bot played a wrong move. \nFor input {perspective}, \n{expected_move} was expected, but got {bot_move}.")
                     bot_move = expected_move
             else:
                 bot_move = super().get_move(bot, perspective, leader_move)
